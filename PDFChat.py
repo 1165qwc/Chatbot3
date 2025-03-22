@@ -1,5 +1,5 @@
 import streamlit as st
-import random,time,os, requests
+import random,time,os,requests
 from huggingface_hub import InferenceClient
 from pypdf import PdfReader
 
@@ -27,3 +27,38 @@ if uploaded_file is not None:
     text = page.extract_text()
 
     st.write(text)    
+
+def response_generator(text,prompt):
+    API_URL = "https://router.huggingface.co/hf-inference/models/google-bert/bert-large-uncased-whole-word-masking-finetuned-squad"
+    headers = {"Authorization": "Bearer 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"}
+
+    payload = ({
+    "inputs": {
+        "question": prompt,
+        "context": text
+    },
+    })
+
+    response = requests.post(API_URL, headers=headers, json=payload)
+    output = response.json()
+
+    return output
+
+st.title("Simple Chat")
+
+if "messages" not in st.session_state:
+    st.session_state.messages = []
+
+for message in st.session_state.messages:
+    with st.chat_message(message["role"]):
+        st.markdown(message["content"])
+
+if prompt := st.chat_input("What is up?"):
+    with st.chat_message("user"):
+        st.markdown(prompt)
+    st.session_state.messages.append({"role": "user", "content": prompt})
+    response = response_generator(text,prompt)
+    with st.chat_message("assistant"):
+        st.markdown(response['answer'])
+    st.session_state.messages.append({"role": "assistant", "content": response['answer']})
+    
