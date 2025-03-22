@@ -19,7 +19,7 @@ This Streamlit application allows you to chat with the content of a PDF or text 
 2.  Navigate to the project directory:
 
     ```bash
-    cd Chatbot
+    cd Chatbot3
     ```
 
 3.  Create a virtual environment (optional but recommended):
