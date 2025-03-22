@@ -41,7 +41,7 @@ This Streamlit application allows you to chat with the content of a PDF or text 
 6.  Run the Streamlit app:
 
     ```bash
-    streamlit run Chatbot3.py
+    streamlit run PDFChat.py
     ```
 
 ## Notes
