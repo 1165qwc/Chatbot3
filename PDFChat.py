@@ -29,29 +29,9 @@ if uploaded_file is not None:
     st.write(text)    
 
 def response_generator(text,prompt):
-    API_URL = "https://router.huggingface.co/fireworks-ai/inference/v1/chat/completions"
+    API_URL = "https://router.huggingface.co/hf-inference/models/google-bert/bert-large-uncased-whole-word-masking-finetuned-squad"
     headers = {"Authorization": "Bearer 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"}
-response = query({
-    "messages": [
-        {
-            "role": "user",
-            "content": [
-                {
-                    "type": "text",
-                    "text": "Describe this image in one sentence."
-                },
-                {
-                    "type": "image_url",
-                    "image_url": {
-                        "url": "https://cdn.britannica.com/61/93061-050-99147DCE/Statue-of-Liberty-Island-New-York-Bay.jpg"
-                    }
-                }
-            ]
-        }
-    ],
-    "max_tokens": 512,
-    "model": "accounts/fireworks/models/llama4-maverick-instruct-basic"
-})
+
     payload = ({
     "inputs": {
         "question": prompt,
