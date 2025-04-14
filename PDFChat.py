@@ -29,7 +29,7 @@ if uploaded_file is not None:
     st.write(text)    
 
 def response_generator(text,prompt):
-    API_URL = "https://router.huggingface.co/fireworks-ai/inference/v1/chat/completions"
+    API_URL = "https://router.huggingface.co/hf-inference/models/deepset/roberta-base-squad2"
     headers = {"Authorization": "Bearer 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"}
 
     payload = ({
