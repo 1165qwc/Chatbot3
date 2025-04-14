@@ -31,7 +31,8 @@ if uploaded_file is not None:
 def response_generator(text,prompt):
     API_URL = "https://router.huggingface.co/fireworks-ai/inference/v1/chat/completions"
     headers = {"Authorization": "Bearer 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"}
-
+    "max_tokens": 512,
+    "model": "accounts/fireworks/models/llama4-maverick-instruct-basic"
     payload = ({
     "inputs": {
         "question": prompt,
