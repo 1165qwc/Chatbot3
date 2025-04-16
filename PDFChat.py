@@ -42,7 +42,7 @@ def response_generator(text,prompt):
     },
     })
 
-    response = requests.post(API_URL, headers=headers, json=payload)
+    response = requests.post(API_URL, json=payload, stream=True)
     output = response.json()
 
     return output
