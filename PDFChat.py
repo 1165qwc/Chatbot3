@@ -1,5 +1,5 @@
 import streamlit as st
-import random,time,os,requests
+import os,requests
 from huggingface_hub import InferenceClient
 from pypdf import PdfReader
 
@@ -25,8 +25,7 @@ if uploaded_file is not None:
 
         reader = PdfReader(saved_path)
         number_of_pages = len(reader.pages)
-        page = reader.pages[0]
-        text = page.extract_text()
+        text = "\n".join(page.extract_text() for page in reader.pages if page.extract_text())
 
         if text:
             st.write(text)
@@ -36,7 +35,7 @@ if uploaded_file is not None:
         st.error(f"An error occurred while processing the PDF: {e}")
 
 def response_generator(text,prompt):
-    API_URL = "https://router.huggingface.co/hf-inference/models/google-bert/bert-large-uncased-whole-word-masking-finetuned-squad"
+    API_URL = "https://router.huggingface.co/fireworks-ai/inference/v1/chat/completions"
     headers = {"Authorization": "Bearer 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"}
 
     payload = {
@@ -44,6 +43,8 @@ def response_generator(text,prompt):
             "question": prompt,
             "context": text
         },
+        "max_tokens": 512,
+        "model": "accounts/fireworks/models/deepseek-v3-0324"
     }
 
     try:
