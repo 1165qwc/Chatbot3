@@ -32,23 +32,20 @@ if uploaded_file is not None:
     # Read the PDF file
     reader = PdfReader(saved_path)
     number_of_pages = len(reader.pages)
-    page = reader.pages[0]
-    text = page.extract_text()
+    text = ""
+    for page in reader.pages:
+        text += page.extract_text() + "\n"
 
     # Display the extracted text
-    st.write(text)
+    st.write("PDF content loaded successfully.")
 
-# Function to generate a response based on simple rules
-def response_generator(prompt):
-    # Simple rule-based responses
-    if "hello" in prompt.lower():
-        return "Hello! How can I assist you today?"
-    elif "help" in prompt.lower():
-        return "Sure, I'm here to help! What do you need assistance with?"
-    elif "pdf" in prompt.lower():
-        return "I can help you with PDF files. Please upload one to get started."
+# Function to generate a response based on the PDF content
+def response_generator(text, prompt):
+    # Simple keyword-based search
+    if prompt.lower() in text.lower():
+        return f"I found the following information related to '{prompt}':\n\n{text}"
     else:
-        return "I'm not sure how to respond to that. Can you ask something else?"
+        return "I'm sorry, I couldn't find any information related to your query in the PDF."
 
 # Display the title for the chat interface
 st.title("Simple Chat")
@@ -68,8 +65,11 @@ if prompt := st.chat_input("What is up?"):
         st.markdown(prompt)
     st.session_state.messages.append({"role": "user", "content": prompt})
 
-    # Generate a response based on the prompt
-    response = response_generator(prompt)
-    with st.chat_message("assistant"):
-        st.markdown(response)
-    st.session_state.messages.append({"role": "assistant", "content": response})
+    # Generate a response if text is available
+    if text:
+        response = response_generator(text, prompt)
+        with st.chat_message("assistant"):
+            st.markdown(response)
+        st.session_state.messages.append({"role": "assistant", "content": response})
+    else:
+        st.error("No text extracted from the PDF.")
