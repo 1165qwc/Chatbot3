@@ -35,6 +35,7 @@ def response_generator(text,prompt):
     API_URL = "http://127.0.0.1:11434/api/text"
 
     payload = ({
+        "model" : "deepseek-r1:1.5b",
     "inputs": {
         "question": prompt,
         "context": text
