@@ -49,7 +49,7 @@ def response_generator(text,prompt):
 
     return output
 
-st.header("Simple Chat")
+st.header("Chat")
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
