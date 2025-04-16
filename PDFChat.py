@@ -8,7 +8,7 @@ upload_folder = 'uploaded_pdf_file'
 if not os.path.exists(upload_folder):
     os.mkdir(upload_folder)
 
-st.header("PDF Chatbot")
+st.title("PDF Chatbot")
 
 uploaded_file = st.file_uploader("Choose a pdf file", type=['pdf','PDF'])
 
@@ -49,7 +49,7 @@ def response_generator(text,prompt):
 
     return output
 
-st.title("Simple Chat")
+st.header("Simple Chat")
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
