@@ -29,7 +29,7 @@ if uploaded_file is not None:
     st.write(text)    
 
 def response_generator(text,prompt):
-    API_URL = "https://router.huggingface.co/fireworks-ai/inference/v1/chat/completions"
+    API_URL = "https://router.huggingface.co/hf-inference/models/google-bert/bert-large-uncased-whole-word-masking-finetuned-squad"
     headers = {"Authorization": "Bearer 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"}
 
     payload = ({
@@ -37,9 +37,6 @@ def response_generator(text,prompt):
         "question": prompt,
         "context": text
     },
-
-            "max_tokens": 512,
-            "model": "accounts/fireworks/models/llama4-scout-instruct-basic"
     })
 
     response = requests.post(API_URL, headers=headers, json=payload)
