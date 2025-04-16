@@ -37,6 +37,9 @@ def response_generator(text,prompt):
         "question": prompt,
         "context": text
     },
+
+            "max_tokens": 512,
+            "model": "accounts/fireworks/models/llama4-scout-instruct-basic"
     })
 
     response = requests.post(API_URL, headers=headers, json=payload)
