@@ -12,11 +12,13 @@ st.header("PDF Chatbot")
 
 uploaded_file = st.file_uploader("Choose a pdf file", type=['pdf','PDF'])
 
+text = ""  # Initialize text variable
+
 if uploaded_file is not None:
     file_name = uploaded_file.name
-    saved_path = os.path.join(upload_folder,file_name)
+    saved_path = os.path.join(upload_folder, file_name)
 
-    with open(saved_path,'wb') as f:
+    with open(saved_path, 'wb') as f:
         f.write(uploaded_file.getbuffer())
 
     st.success(f"PDF file has successfully uploaded to {saved_path}")
@@ -24,9 +26,9 @@ if uploaded_file is not None:
     reader = PdfReader(saved_path)
     number_of_pages = len(reader.pages)
     page = reader.pages[0]
-    text = page.extract_text()
+    text = page.extract_text()  # Extract text from the first page
 
-    st.write(text)    
+    st.write(text)
 
 def response_generator(text,prompt):
     # API_URL = "https://router.huggingface.co/hf-inference/models/google-bert/bert-large-uncased-whole-word-masking-finetuned-squad"
@@ -60,8 +62,12 @@ if prompt := st.chat_input("What is up?"):
     with st.chat_message("user"):
         st.markdown(prompt)
     st.session_state.messages.append({"role": "user", "content": prompt})
-    response = response_generator(text,prompt)
-    with st.chat_message("assistant"):
-        st.markdown(response['answer'])
-    st.session_state.messages.append({"role": "assistant", "content": response['answer']})
     
+    # Ensure text is not empty before calling response_generator
+    if text:
+        response = response_generator(text, prompt)
+        with st.chat_message("assistant"):
+            st.markdown(response['answer'])
+        st.session_state.messages.append({"role": "assistant", "content": response['answer']})
+    else:
+        st.error("No text extracted from the PDF.")
