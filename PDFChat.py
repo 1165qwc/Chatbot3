@@ -36,7 +36,7 @@ if uploaded_file is not None:
 
 def response_generator(text,prompt):
     API_URL = "https://router.huggingface.co/fireworks-ai/inference/v1/chat/completions"
-    headers = {"Authorization": "Bearer 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"}
+    headers = {"Authorization": "Bearer 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"}
 
     payload = {
         "inputs": {
