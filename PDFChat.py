@@ -35,7 +35,7 @@ if uploaded_file is not None:
     with open(saved_path, 'wb') as f:
         f.write(uploaded_file.getbuffer())
 
-    st.success(f"PDF file has successfully uploaded to `{saved_path}`")
+    st.success(f"PDF file has successfully uploaded to {saved_path}")
 
     reader = PdfReader(saved_path)
     number_of_pages = len(reader.pages)
@@ -78,12 +78,8 @@ if prompt := st.chat_input("What is up?"):
         st.markdown(prompt)
     st.session_state.messages.append({"role": "user", "content": prompt})
 
-    # ---------------- GREETING LOGIC ----------------
-    greetings = ["hi", "hello", "hey", "good morning", "good afternoon", "good evening"]
-    if prompt.strip().lower() in greetings:
-        answer = f"Hello! 👋 How can I assist you today with your PDF?"
-    # Generate model response for valid questions
-    elif text:
+    # Generate model response
+    if text:
         with st.spinner("Thinking..."):
             response = response_generator(text, prompt)
             answer = response.get('answer', 'Sorry, I could not find an answer.')
