@@ -79,10 +79,17 @@ if prompt := st.chat_input("What is up?"):
     st.session_state.messages.append({"role": "user", "content": prompt})
 
     # Generate model response
-    if text:
+    # Handle casual greetings
+    greetings = ["hi", "hello", "hey", "good morning", "good afternoon", "good evening"]
+    if prompt.strip().lower() in greetings:
+        answer = "Hello! 👋 Feel free to ask a question about your uploaded PDF."
+    elif text:
         with st.spinner("Thinking..."):
             response = response_generator(text, prompt)
             answer = response.get('answer', 'Sorry, I could not find an answer.')
+    else:
+        answer = "Please upload a PDF file first."
+
     else:
         answer = "Please upload a PDF file first."
 
