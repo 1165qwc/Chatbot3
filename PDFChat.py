@@ -56,9 +56,30 @@ def response_generator(text, prompt):
         },
     }
 
-    response = requests.post(API_URL, headers=headers, json=payload)
-    output = response.json()
-    return output
+    try:
+        # Make the POST request
+        response = requests.post(API_URL, headers=headers, json=payload, timeout=15)
+
+        # Check if the response is successful
+        response.raise_for_status()
+
+        # Try to get the JSON data
+        output = response.json()
+
+        # Return output if valid
+        if 'answer' in output:
+            return output
+        else:
+            return {"answer": "The model did not return an answer."}
+
+    except requests.exceptions.HTTPError as http_err:
+        return {"answer": f"HTTP error occurred: {http_err}"}
+    except requests.exceptions.RequestException as req_err:
+        return {"answer": f"Request error occurred: {req_err}"}
+    except ValueError as json_err:
+        return {"answer": f"Error decoding JSON: {json_err}"}
+    except Exception as e:
+        return {"answer": f"Unexpected error: {e}"}
 
 # ---------------- CHAT INTERFACE ----------------
 st.title("Simple Chat")
