@@ -6,6 +6,7 @@ import re
 from fuzzywuzzy import fuzz
 import base64
 from io import BytesIO
+import json
 
 upload_folder = 'uploaded_pdf_file'
 
@@ -13,6 +14,22 @@ if not os.path.exists(upload_folder):
     os.mkdir(upload_folder)
 
 st.header("PDF Chatbot")
+
+# Sidebar for model selection
+st.sidebar.title("Model Settings")
+selected_model = st.sidebar.selectbox(
+    "Choose AI Model",
+    ["Local Ollama", "Fireworks AI", "BERT (Fallback)"],
+    index=0
+)
+
+# Ollama model selection if using local
+if selected_model == "Local Ollama":
+    ollama_model = st.sidebar.selectbox(
+        "Choose Ollama Model",
+        ["deepseek-r1:1.5b"],
+        index=0
+    )
 
 uploaded_file = st.file_uploader("Choose a pdf file", type=['pdf','PDF'])
 
@@ -107,6 +124,70 @@ def get_pdf_image(pdf_path):
         st.error(f"Error extracting PDF image: {e}")
         return None
 
+def call_ollama_api(prompt, context, model="llama3", pdf_path=None):
+    """Call the local Ollama API running at 127.0.0.1:11434"""
+    API_URL = "http://127.0.0.1:11434/api/chat"
+    
+    # Prepare message for text-based models
+    messages = [
+        {"role": "system", "content": f"You are a helpful PDF assistant. Answer based on this context: {context}"},
+        {"role": "user", "content": prompt}
+    ]
+    
+    # For multimodal models like llava
+    if model == "llava" and pdf_path:
+        image_data = None
+        try:
+            from pdf2image import convert_from_path
+            images = convert_from_path(pdf_path, first_page=1, last_page=1)
+            if images:
+                buffered = BytesIO()
+                images[0].save(buffered, format="JPEG")
+                image_data = base64.b64encode(buffered.getvalue()).decode()
+        except Exception as e:
+            st.warning(f"Could not convert PDF to image for multimodal model: {e}")
+        
+        if image_data:
+            # Format for llava multimodal
+            API_URL = "http://127.0.0.1:11434/api/generate"
+            payload = {
+                "model": model,
+                "prompt": f"<image>\n{prompt}\nContext: {context}",
+                "stream": False,
+                "images": [image_data]
+            }
+        else:
+            payload = {
+                "model": model,
+                "messages": messages,
+                "stream": False
+            }
+    else:
+        payload = {
+            "model": model,
+            "messages": messages,
+            "stream": False
+        }
+    
+    try:
+        response = requests.post(API_URL, json=payload)
+        if response.status_code == 200:
+            data = response.json()
+            
+            # Handle different API response formats
+            if "message" in data:
+                return data["message"]["content"]
+            elif "response" in data:
+                return data["response"]
+            else:
+                return "No response from Ollama"
+        else:
+            st.error(f"Ollama API error: {response.status_code}")
+            return f"Error: {response.status_code}"
+    except Exception as e:
+        st.error(f"Error calling Ollama: {str(e)}")
+        return f"Error: {str(e)}"
+
 def response_generator(text, prompt, pdf_path=None):
     # Find relevant context and check for missing information
     context, missing_info = fuzzy_match_query(text, prompt)
@@ -118,15 +199,27 @@ def response_generator(text, prompt, pdf_path=None):
             "needs_info": True
         }
     
-    # Try the advanced Fireworks AI API first (for better responses)
-    try:
-        fireworks_response = call_fireworks_api(prompt, context, pdf_path)
-        if fireworks_response:
-            return {"answer": enhance_response(fireworks_response)}
-    except Exception as e:
-        st.warning(f"Falling back to BERT model: {e}", icon="⚠️")
+    # Use selected model
+    if selected_model == "Local Ollama":
+        try:
+            ollama_response = call_ollama_api(prompt, context, ollama_model, pdf_path)
+            if ollama_response:
+                return {"answer": enhance_response(ollama_response)}
+            else:
+                st.warning("No response from Ollama, falling back to other models", icon="⚠️")
+        except Exception as e:
+            st.warning(f"Error with Ollama: {e}. Falling back to other models.", icon="⚠️")
     
-    # Fallback to the original BERT model if Fireworks API fails
+    # Try the advanced Fireworks AI API if selected or as fallback
+    if selected_model == "Fireworks AI" or (selected_model == "Local Ollama" and 'ollama_response' not in locals()):
+        try:
+            fireworks_response = call_fireworks_api(prompt, context, pdf_path)
+            if fireworks_response:
+                return {"answer": enhance_response(fireworks_response)}
+        except Exception as e:
+            st.warning(f"Falling back to BERT model: {e}", icon="⚠️")
+    
+    # Fallback to the original BERT model
     API_URL = "https://router.huggingface.co/hf-inference/models/google-bert/bert-large-uncased-whole-word-masking-finetuned-squad"
     headers = {"Authorization": "Bearer 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"}
 
@@ -208,7 +301,10 @@ if prompt := st.chat_input("Ask me anything about your document..."):
     
     # Pass the PDF path for potential multimodal features
     pdf_path = os.path.join(upload_folder, uploaded_file.name) if uploaded_file else None
-    response = response_generator(extracted_text if extracted_text else "", prompt, pdf_path)
+    
+    # Show a spinner while processing
+    with st.spinner("Processing your question..."):
+        response = response_generator(extracted_text if extracted_text else "", prompt, pdf_path)
     
     with st.chat_message("assistant"):
         st.markdown(response['answer'])
