@@ -7,6 +7,11 @@ from fuzzywuzzy import fuzz
 import base64
 from io import BytesIO
 import json
+import logging
+
+# Configure logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logger = logging.getLogger('PDFChat')
 
 upload_folder = 'uploaded_pdf_file'
 
@@ -23,13 +28,52 @@ selected_model = st.sidebar.selectbox(
     index=0
 )
 
-# Ollama model selection if using local
+# Test Ollama connection in the sidebar
 if selected_model == "Local Ollama":
+    try:
+        response = requests.get("http://127.0.0.1:11434/api/version", timeout=2)
+        if response.status_code == 200:
+            st.sidebar.success(f"✅ Ollama connected: {response.json().get('version', 'unknown version')}")
+            ollama_models_available = True
+        else:
+            st.sidebar.error("❌ Ollama server responded with an error. Status code: " + str(response.status_code))
+            ollama_models_available = False
+    except requests.exceptions.RequestException as e:
+        st.sidebar.error(f"❌ Could not connect to Ollama server: {str(e)}")
+        st.sidebar.info("Make sure Ollama is running with 'ollama serve' command")
+        ollama_models_available = False
+
+    # Ollama model selection
     ollama_model = st.sidebar.selectbox(
         "Choose Ollama Model",
         ["deepseek-r1:1.5b"],
         index=0
     )
+    
+    # Add a refresh button to test connection again
+    if st.sidebar.button("Test Ollama Connection"):
+        try:
+            response = requests.get("http://127.0.0.1:11434/api/version", timeout=2)
+            if response.status_code == 200:
+                st.sidebar.success(f"✅ Ollama connected: {response.json().get('version', 'unknown version')}")
+                # Check if model is available
+                try:
+                    model_response = requests.get("http://127.0.0.1:11434/api/tags", timeout=2)
+                    if model_response.status_code == 200:
+                        models = model_response.json().get('models', [])
+                        model_names = [model.get('name') for model in models]
+                        if ollama_model in model_names:
+                            st.sidebar.success(f"✅ Model '{ollama_model}' is available!")
+                        else:
+                            st.sidebar.warning(f"⚠️ Model '{ollama_model}' not found. Available models: {', '.join(model_names)}")
+                            st.sidebar.info(f"Try: ollama pull {ollama_model}")
+                except Exception as e:
+                    st.sidebar.warning(f"⚠️ Could not check model availability: {str(e)}")
+            else:
+                st.sidebar.error("❌ Ollama server responded with an error")
+        except requests.exceptions.RequestException as e:
+            st.sidebar.error(f"❌ Could not connect to Ollama server: {str(e)}")
+            st.sidebar.info("Make sure Ollama is running with 'ollama serve' command")
 
 uploaded_file = st.file_uploader("Choose a pdf file", type=['pdf','PDF'])
 
@@ -124,9 +168,11 @@ def get_pdf_image(pdf_path):
         st.error(f"Error extracting PDF image: {e}")
         return None
 
-def call_ollama_api(prompt, context, model="llama3", pdf_path=None):
+def call_ollama_api(prompt, context, model="deepseek-r1:1.5b", pdf_path=None):
     """Call the local Ollama API running at 127.0.0.1:11434"""
     API_URL = "http://127.0.0.1:11434/api/chat"
+    
+    logger.info(f"Calling Ollama API with model: {model}")
     
     # Prepare message for text-based models
     messages = [
@@ -135,7 +181,7 @@ def call_ollama_api(prompt, context, model="llama3", pdf_path=None):
     ]
     
     # For multimodal models like llava
-    if model == "llava" and pdf_path:
+    if model.lower() == "llava" and pdf_path:
         image_data = None
         try:
             from pdf2image import convert_from_path
@@ -145,6 +191,7 @@ def call_ollama_api(prompt, context, model="llama3", pdf_path=None):
                 images[0].save(buffered, format="JPEG")
                 image_data = base64.b64encode(buffered.getvalue()).decode()
         except Exception as e:
+            logger.error(f"Could not convert PDF to image: {e}")
             st.warning(f"Could not convert PDF to image for multimodal model: {e}")
         
         if image_data:
@@ -170,9 +217,13 @@ def call_ollama_api(prompt, context, model="llama3", pdf_path=None):
         }
     
     try:
-        response = requests.post(API_URL, json=payload)
+        logger.info(f"Sending request to Ollama API at {API_URL}")
+        response = requests.post(API_URL, json=payload, timeout=60)
+        logger.info(f"Ollama API response status: {response.status_code}")
+        
         if response.status_code == 200:
             data = response.json()
+            logger.info("Received successful response from Ollama")
             
             # Handle different API response formats
             if "message" in data:
@@ -180,13 +231,30 @@ def call_ollama_api(prompt, context, model="llama3", pdf_path=None):
             elif "response" in data:
                 return data["response"]
             else:
+                logger.warning("Unexpected response format from Ollama")
                 return "No response from Ollama"
         else:
-            st.error(f"Ollama API error: {response.status_code}")
+            error_msg = f"Ollama API error: {response.status_code}"
+            logger.error(error_msg)
+            if response.text:
+                logger.error(f"Response text: {response.text}")
+            st.error(error_msg)
             return f"Error: {response.status_code}"
+    except requests.exceptions.ConnectTimeout:
+        error_msg = "Connection timeout when connecting to Ollama server. Make sure it's running."
+        logger.error(error_msg)
+        st.error(error_msg)
+        return error_msg
+    except requests.exceptions.ConnectionError:
+        error_msg = "Could not connect to Ollama server at 127.0.0.1:11434. Make sure it's running with 'ollama serve'."
+        logger.error(error_msg)
+        st.error(error_msg)
+        return error_msg
     except Exception as e:
-        st.error(f"Error calling Ollama: {str(e)}")
-        return f"Error: {str(e)}"
+        error_msg = f"Error calling Ollama: {str(e)}"
+        logger.error(error_msg)
+        st.error(error_msg)
+        return error_msg
 
 def response_generator(text, prompt, pdf_path=None):
     # Find relevant context and check for missing information
@@ -202,24 +270,32 @@ def response_generator(text, prompt, pdf_path=None):
     # Use selected model
     if selected_model == "Local Ollama":
         try:
+            logger.info(f"Using Ollama model: {ollama_model}")
             ollama_response = call_ollama_api(prompt, context, ollama_model, pdf_path)
-            if ollama_response:
+            if ollama_response and not ollama_response.startswith("Error:") and not ollama_response.startswith("Could not connect"):
                 return {"answer": enhance_response(ollama_response)}
             else:
-                st.warning("No response from Ollama, falling back to other models", icon="⚠️")
+                st.warning("No valid response from Ollama, falling back to other models", icon="⚠️")
+                logger.warning(f"Invalid Ollama response: {ollama_response}")
         except Exception as e:
             st.warning(f"Error with Ollama: {e}. Falling back to other models.", icon="⚠️")
+            logger.error(f"Exception in Ollama call: {str(e)}")
     
     # Try the advanced Fireworks AI API if selected or as fallback
-    if selected_model == "Fireworks AI" or (selected_model == "Local Ollama" and 'ollama_response' not in locals()):
+    if selected_model == "Fireworks AI" or (selected_model == "Local Ollama" and ('ollama_response' not in locals() or 
+                                                                                  (ollama_response and (ollama_response.startswith("Error:") or 
+                                                                                                     ollama_response.startswith("Could not connect"))))):
         try:
+            logger.info("Trying Fireworks AI API")
             fireworks_response = call_fireworks_api(prompt, context, pdf_path)
             if fireworks_response:
                 return {"answer": enhance_response(fireworks_response)}
         except Exception as e:
             st.warning(f"Falling back to BERT model: {e}", icon="⚠️")
+            logger.error(f"Exception in Fireworks API call: {str(e)}")
     
     # Fallback to the original BERT model
+    logger.info("Using BERT model as fallback")
     API_URL = "https://router.huggingface.co/hf-inference/models/google-bert/bert-large-uncased-whole-word-masking-finetuned-squad"
     headers = {"Authorization": "Bearer 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"}
 
