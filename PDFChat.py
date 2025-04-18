@@ -4,6 +4,8 @@ from huggingface_hub import InferenceClient
 from pypdf import PdfReader
 import re
 from fuzzywuzzy import fuzz
+import base64
+from io import BytesIO
 
 upload_folder = 'uploaded_pdf_file'
 
@@ -14,6 +16,7 @@ st.header("PDF Chatbot")
 
 uploaded_file = st.file_uploader("Choose a pdf file", type=['pdf','PDF'])
 
+extracted_text = ""
 if uploaded_file is not None:
     file_name = uploaded_file.name
     saved_path = os.path.join(upload_folder,file_name)
@@ -25,10 +28,15 @@ if uploaded_file is not None:
 
     reader = PdfReader(saved_path)
     number_of_pages = len(reader.pages)
-    page = reader.pages[0]
-    text = page.extract_text()
-
-    st.write(text)    
+    
+    # Extract text from all pages
+    extracted_text = ""
+    for i in range(number_of_pages):
+        page = reader.pages[i]
+        extracted_text += page.extract_text()
+    
+    # Display first page text as preview
+    st.write(reader.pages[0].extract_text())
 
 def enhance_response(answer):
     # Add more human-like expressions to responses
@@ -84,7 +92,22 @@ def fuzzy_match_query(text, query):
         
     return context, missing_info
 
-def response_generator(text, prompt):
+def get_pdf_image(pdf_path):
+    """Extract first page as image for multimodal models"""
+    try:
+        from pdf2image import convert_from_path
+        images = convert_from_path(pdf_path, first_page=1, last_page=1)
+        if images:
+            buffered = BytesIO()
+            images[0].save(buffered, format="JPEG")
+            img_str = base64.b64encode(buffered.getvalue()).decode()
+            return f"data:image/jpeg;base64,{img_str}"
+        return None
+    except Exception as e:
+        st.error(f"Error extracting PDF image: {e}")
+        return None
+
+def response_generator(text, prompt, pdf_path=None):
     # Find relevant context and check for missing information
     context, missing_info = fuzzy_match_query(text, prompt)
     
@@ -95,6 +118,15 @@ def response_generator(text, prompt):
             "needs_info": True
         }
     
+    # Try the advanced Fireworks AI API first (for better responses)
+    try:
+        fireworks_response = call_fireworks_api(prompt, context, pdf_path)
+        if fireworks_response:
+            return {"answer": enhance_response(fireworks_response)}
+    except Exception as e:
+        st.warning(f"Falling back to BERT model: {e}", icon="⚠️")
+    
+    # Fallback to the original BERT model if Fireworks API fails
     API_URL = "https://router.huggingface.co/hf-inference/models/google-bert/bert-large-uncased-whole-word-masking-finetuned-squad"
     headers = {"Authorization": "Bearer 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"}
 
@@ -114,6 +146,52 @@ def response_generator(text, prompt):
     
     return output
 
+def call_fireworks_api(prompt, context, pdf_path=None):
+    """Call the Fireworks AI API with text and optional image"""
+    API_URL = "https://router.huggingface.co/fireworks-ai/inference/v1/chat/completions"
+    headers = {
+        "Authorization": "Bearer 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",  # Using same token for now
+    }
+    
+    # Prepare message content
+    message_content = [
+        {
+            "type": "text",
+            "text": f"Context from PDF: {context}\n\nUser question: {prompt}\n\nAnswer the question based on the provided context."
+        }
+    ]
+    
+    # Add image if available
+    if pdf_path:
+        image_url = get_pdf_image(pdf_path)
+        if image_url:
+            message_content.append(
+                {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": image_url
+                    }
+                }
+            )
+    
+    payload = {
+        "messages": [
+            {
+                "role": "user",
+                "content": message_content
+            }
+        ],
+        "max_tokens": 512,
+        "model": "accounts/fireworks/models/llama4-scout-instruct-basic"
+    }
+    
+    response = requests.post(API_URL, headers=headers, json=payload)
+    if response.status_code == 200:
+        result = response.json()
+        return result["choices"][0]["message"]["content"]
+    else:
+        raise Exception(f"API error: {response.status_code}")
+
 st.title("PDF Chat Assistant")
 
 if "messages" not in st.session_state:
@@ -127,7 +205,11 @@ if prompt := st.chat_input("Ask me anything about your document..."):
     with st.chat_message("user"):
         st.markdown(prompt)
     st.session_state.messages.append({"role": "user", "content": prompt})
-    response = response_generator(text, prompt)
+    
+    # Pass the PDF path for potential multimodal features
+    pdf_path = os.path.join(upload_folder, uploaded_file.name) if uploaded_file else None
+    response = response_generator(extracted_text if extracted_text else "", prompt, pdf_path)
+    
     with st.chat_message("assistant"):
         st.markdown(response['answer'])
     st.session_state.messages.append({"role": "assistant", "content": response['answer']})
