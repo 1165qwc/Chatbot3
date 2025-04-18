@@ -1,4 +1,9 @@
 streamlit
-huggingface_hub
-PyPDF
+pypdf
 fuzzywuzzy
+python-Levenshtein
+huggingface_hub
+requests
+pdf2image
+Pillow
+python-dotenv
