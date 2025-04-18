@@ -13,11 +13,13 @@ import logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger('PDFChat')
 
+# ----------- Upload Folder Setup -----------
 upload_folder = 'uploaded_pdf_file'
 
 if not os.path.exists(upload_folder):
     os.mkdir(upload_folder)
 
+# ----------- Streamlit UI: Header and Sidebar -----------
 st.header("PDF Chatbot")
 
 # Sidebar for model selection
@@ -28,7 +30,7 @@ selected_model = st.sidebar.selectbox(
     index=0
 )
 
-# Test Ollama connection in the sidebar
+# ----------- Ollama Connection Check -----------
 if selected_model == "Local Ollama":
     try:
         response = requests.get("http://127.0.0.1:11434/api/version", timeout=2)
@@ -56,7 +58,6 @@ if selected_model == "Local Ollama":
             response = requests.get("http://127.0.0.1:11434/api/version", timeout=2)
             if response.status_code == 200:
                 st.sidebar.success(f"✅ Ollama connected: {response.json().get('version', 'unknown version')}")
-                # Check if model is available
                 try:
                     model_response = requests.get("http://127.0.0.1:11434/api/tags", timeout=2)
                     if model_response.status_code == 200:
@@ -75,6 +76,7 @@ if selected_model == "Local Ollama":
             st.sidebar.error(f"❌ Could not connect to Ollama server: {str(e)}")
             st.sidebar.info("Make sure Ollama is running with 'ollama serve' command")
 
+# ----------- PDF Upload and Text Extraction -----------
 uploaded_file = st.file_uploader("Choose a pdf file", type=['pdf','PDF'])
 
 extracted_text = ""
@@ -99,27 +101,23 @@ if uploaded_file is not None:
     # Display first page text as preview
     st.write(reader.pages[0].extract_text())
 
+# ----------- Response Enhancement Function -----------
 def enhance_response(answer):
-    # Add more human-like expressions to responses
     greetings = ["I found this for you: ", "Here's what I discovered: ", 
                 "Based on the document: ", "According to the PDF: "]
-    
-    # Add follow-up questions if the answer seems short
     follow_ups = ["\n\nIs there anything specific you'd like to know more about?",
                  "\n\nCan I help you with anything else?",
                  "\n\nWould you like more details on this topic?"]
-    
-    if len(answer) < 50:  # For short answers
+    if len(answer) < 50:
         return f"{random.choice(greetings)}{answer}{random.choice(follow_ups)}"
     else:
         return f"{random.choice(greetings)}{answer}"
 
+# ----------- Fuzzy Matching Logic for Context Extraction -----------
 def fuzzy_match_query(text, query):
-    # Extract key terms from user query
     key_terms = re.findall(r'\b\w+\b', query.lower())
-    key_terms = [term for term in key_terms if len(term) > 3]  # Filter out short words
+    key_terms = [term for term in key_terms if len(term) > 3]
     
-    # Find relevant context with fuzzy matching
     paragraphs = text.split('\n\n')
     best_paragraph = ""
     highest_score = 0
@@ -127,24 +125,18 @@ def fuzzy_match_query(text, query):
     for paragraph in paragraphs:
         if len(paragraph.strip()) < 10:
             continue
-        
         score = 0
         for term in key_terms:
-            # Check for fuzzy matches in paragraph
             for word in re.findall(r'\b\w+\b', paragraph.lower()):
                 if len(word) > 3:
                     match_score = fuzz.ratio(term, word)
-                    if match_score > 70:  # Threshold for considering it a match
+                    if match_score > 70:
                         score += match_score
-        
         if score > highest_score:
             highest_score = score
             best_paragraph = paragraph
     
-    # If no good paragraph found, use the entire text
     context = best_paragraph if highest_score > 0 else text
-    
-    # If we need more info from user
     missing_info = []
     if "when" in query.lower() and not re.search(r'\b(date|day|month|year|time)\b', query, re.IGNORECASE):
         missing_info.append("time period")
@@ -153,8 +145,8 @@ def fuzzy_match_query(text, query):
         
     return context, missing_info
 
+# ----------- PDF Image Extraction for Multimodal Use -----------
 def get_pdf_image(pdf_path):
-    """Extract first page as image for multimodal models"""
     try:
         from pdf2image import convert_from_path
         images = convert_from_path(pdf_path, first_page=1, last_page=1)
@@ -168,19 +160,16 @@ def get_pdf_image(pdf_path):
         st.error(f"Error extracting PDF image: {e}")
         return None
 
+# ----------- Ollama API Communication Logic -----------
 def call_ollama_api(prompt, context, model="deepseek-r1:1.5b", pdf_path=None):
-    """Call the local Ollama API running at 127.0.0.1:11434"""
     API_URL = "http://127.0.0.1:11434/api/chat"
-    
     logger.info(f"Calling Ollama API with model: {model}")
     
-    # Prepare message for text-based models
     messages = [
         {"role": "system", "content": f"You are a helpful PDF assistant. Answer based on this context: {context}"},
         {"role": "user", "content": prompt}
     ]
     
-    # For multimodal models like llava
     if model.lower() == "llava" and pdf_path:
         image_data = None
         try:
@@ -195,7 +184,6 @@ def call_ollama_api(prompt, context, model="deepseek-r1:1.5b", pdf_path=None):
             st.warning(f"Could not convert PDF to image for multimodal model: {e}")
         
         if image_data:
-            # Format for llava multimodal
             API_URL = "http://127.0.0.1:11434/api/generate"
             payload = {
                 "model": model,
@@ -224,8 +212,6 @@ def call_ollama_api(prompt, context, model="deepseek-r1:1.5b", pdf_path=None):
         if response.status_code == 200:
             data = response.json()
             logger.info("Received successful response from Ollama")
-            
-            # Handle different API response formats
             if "message" in data:
                 return data["message"]["content"]
             elif "response" in data:
@@ -256,18 +242,16 @@ def call_ollama_api(prompt, context, model="deepseek-r1:1.5b", pdf_path=None):
         st.error(error_msg)
         return error_msg
 
+# ----------- Central Response Generator with Model Fallback Logic -----------
 def response_generator(text, prompt, pdf_path=None):
-    # Find relevant context and check for missing information
     context, missing_info = fuzzy_match_query(text, prompt)
     
-    # Ask for more info if needed
     if missing_info and len(missing_info) > 0:
         return {
             "answer": f"I'd like to help, but I need more information about the {', '.join(missing_info)} to give you a proper answer. Could you please provide more details?",
             "needs_info": True
         }
     
-    # Use selected model
     if selected_model == "Local Ollama":
         try:
             logger.info(f"Using Ollama model: {ollama_model}")
@@ -281,7 +265,6 @@ def response_generator(text, prompt, pdf_path=None):
             st.warning(f"Error with Ollama: {e}. Falling back to other models.", icon="⚠️")
             logger.error(f"Exception in Ollama call: {str(e)}")
     
-    # Try the advanced Fireworks AI API if selected or as fallback
     if selected_model == "Fireworks AI" or (selected_model == "Local Ollama" and ('ollama_response' not in locals() or 
                                                                                   (ollama_response and (ollama_response.startswith("Error:") or 
                                                                                                      ollama_response.startswith("Could not connect"))))):
@@ -294,35 +277,32 @@ def response_generator(text, prompt, pdf_path=None):
             st.warning(f"Falling back to BERT model: {e}", icon="⚠️")
             logger.error(f"Exception in Fireworks API call: {str(e)}")
     
-    # Fallback to the original BERT model
     logger.info("Using BERT model as fallback")
     API_URL = "https://router.huggingface.co/hf-inference/models/google-bert/bert-large-uncased-whole-word-masking-finetuned-squad"
     headers = {"Authorization": "Bearer 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"}
 
     payload = ({
-    "inputs": {
-        "question": prompt,
-        "context": context
-    },
+        "inputs": {
+            "question": prompt,
+            "context": context
+        },
     })
 
     response = requests.post(API_URL, headers=headers, json=payload)
     output = response.json()
     
-    # Enhance the response to make it more human-like
     if 'answer' in output:
         output['answer'] = enhance_response(output['answer'])
     
     return output
 
+# ----------- Fireworks AI API Call Logic -----------
 def call_fireworks_api(prompt, context, pdf_path=None):
-    """Call the Fireworks AI API with text and optional image"""
     API_URL = "https://router.huggingface.co/fireworks-ai/inference/v1/chat/completions"
     headers = {
-        "Authorization": "Bearer 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",  # Using same token for now
+        "Authorization": "Bearer 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",
     }
     
-    # Prepare message content
     message_content = [
         {
             "type": "text",
@@ -330,7 +310,6 @@ def call_fireworks_api(prompt, context, pdf_path=None):
         }
     ]
     
-    # Add image if available
     if pdf_path:
         image_url = get_pdf_image(pdf_path)
         if image_url:
@@ -361,6 +340,7 @@ def call_fireworks_api(prompt, context, pdf_path=None):
     else:
         raise Exception(f"API error: {response.status_code}")
 
+# ----------- Streamlit Chat UI and Interaction Logic -----------
 st.title("PDF Chat Assistant")
 
 if "messages" not in st.session_state:
@@ -375,10 +355,8 @@ if prompt := st.chat_input("Ask me anything about your document..."):
         st.markdown(prompt)
     st.session_state.messages.append({"role": "user", "content": prompt})
     
-    # Pass the PDF path for potential multimodal features
     pdf_path = os.path.join(upload_folder, uploaded_file.name) if uploaded_file else None
     
-    # Show a spinner while processing
     with st.spinner("Processing your question..."):
         response = response_generator(extracted_text if extracted_text else "", prompt, pdf_path)
     
