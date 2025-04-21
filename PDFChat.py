@@ -311,48 +311,48 @@ def call_ollama_api(prompt, context, model="deepseek-r1:1.5b", pdf_path=None):
         return error_msg
 
 # ----------- Fireworks AI API Call Logic -----------
-def call_fireworks_api(prompt, context, pdf_path=None):
-    API_URL = "https://router.huggingface.co/fireworks-ai/inference/v1/chat/completions"
-    headers = {
-        "Authorization": "Bearer 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",
-    }
+# def call_fireworks_api(prompt, context, pdf_path=None):
+#     API_URL = "https://router.huggingface.co/fireworks-ai/inference/v1/chat/completions"
+#     headers = {
+#               "Authorization": f"Bearer {FIREWORKS_API_KEY}",
+#     }
     
-    message_content = [
-        {
-            "type": "text",
-            "text": f"Context from PDF: {context}\n\nUser question: {prompt}\n\nAnswer the question based on the provided context."
-        }
-    ]
+#     message_content = [
+#         {
+#             "type": "text",
+#             "text": f"Context from PDF: {context}\n\nUser question: {prompt}\n\nAnswer the question based on the provided context."
+#         }
+#     ]
     
-    if pdf_path:
-        image_url = get_pdf_image(pdf_path)
-        if image_url:
-            message_content.append(
-                {
-                    "type": "image_url",
-                    "image_url": {
-                        "url": image_url
-                    }
-                }
-            )
+#     if pdf_path:
+#         image_url = get_pdf_image(pdf_path)
+#         if image_url:
+#             message_content.append(
+#                 {
+#                     "type": "image_url",
+#                     "image_url": {
+#                         "url": image_url
+#                     }
+#                 }
+#             )
     
-    payload = {
-        "messages": [
-            {
-                "role": "user",
-                "content": message_content
-            }
-        ],
-        "max_tokens": 512,
-        "model": "accounts/fireworks/models/llama4-scout-instruct-basic"
-    }
+#     payload = {
+#         "messages": [
+#             {
+#                 "role": "user",
+#                 "content": message_content
+#             }
+#         ],
+#         "max_tokens": 512,
+#         "model": "accounts/fireworks/models/llama4-scout-instruct-basic"
+#     }
     
-    response = requests.post(API_URL, headers=headers, json=payload)
-    if response.status_code == 200:
-        result = response.json()
-        return result["choices"][0]["message"]["content"]
-    else:
-        raise Exception(f"API error: {response.status_code}")
+#     response = requests.post(API_URL, headers=headers, json=payload)
+#     if response.status_code == 200:
+#         result = response.json()
+#         return result["choices"][0]["message"]["content"]
+#     else:
+#         raise Exception(f"API error: {response.status_code}")
 
 # ----------- Central Response Generator with Model Fallback Logic -----------
 def response_generator(text, prompt, pdf_path=None):
