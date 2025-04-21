@@ -9,6 +9,9 @@ from io import BytesIO
 import json
 import logging
 
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
+FIREWORKS_API_KEY = os.getenv("FIREWORKS_API_KEY")
+
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger('PDFChat')
@@ -99,7 +102,7 @@ def call_openrouter_api(prompt, context, pdf_path=None):
         response = requests.post(
             url=API_URL,
             headers={
-                "Authorization": "Bearer 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",
+                "Authorization": f"Bearer {OPENROUTER_API_KEY}",
                 "Content-Type": "application/json",
             },
             data=json.dumps(payload),
