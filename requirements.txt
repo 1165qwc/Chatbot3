@@ -7,3 +7,4 @@ requests
 pdf2image
 Pillow
 python-dotenv
+poppler 
