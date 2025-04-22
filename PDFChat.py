@@ -8,6 +8,10 @@ import base64
 from io import BytesIO
 import json
 import logging
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 FIREWORKS_API_KEY = os.getenv("FIREWORKS_API_KEY")
@@ -15,6 +19,13 @@ FIREWORKS_API_KEY = os.getenv("FIREWORKS_API_KEY")
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger('PDFChat')
+
+# Check if API keys are available
+if not OPENROUTER_API_KEY:
+    logger.warning("OpenRouter API key not found in environment variables")
+
+if not FIREWORKS_API_KEY:
+    logger.warning("Fireworks API key not found in environment variables")
 
 # ----------- Upload Folder Setup -----------
 upload_folder = 'uploaded_pdf_file'
@@ -51,9 +62,15 @@ if selected_model == "Local Ollama":
     # Ollama model selection
     ollama_model = st.sidebar.selectbox(
         "Choose Ollama Model",
-        ["deepseek-r1:1.5b"],
+        ["deepseek-r1:1.5b", "deepseek-r1:8b"],
         index=0
     )
+    
+    # Add model information
+    if ollama_model == "deepseek-r1:8b":
+        st.sidebar.info("Using deepseek-r1:8b - This is a larger model with better reasoning capabilities")
+    else:
+        st.sidebar.info("Using deepseek-r1:1.5b - Faster but less capable than the 8b model")
     
     # Add a refresh button to test connection again
     if st.sidebar.button("Test Ollama Connection"):
@@ -86,6 +103,13 @@ def call_openrouter_api(prompt, context, pdf_path=None):
     
     logger.info("Calling OpenRouter API with deepseek model")
     
+    # Check if API key is available
+    if not OPENROUTER_API_KEY:
+        error_msg = "OpenRouter API key is missing. Please set the OPENROUTER_API_KEY environment variable."
+        logger.error(error_msg)
+        st.error(error_msg)
+        return error_msg
+    
     # Prepare message with strict instructions to only use PDF content
     messages = [
         {"role": "system", "content": f"You are a PDF assistant that ONLY answers questions based on the content of the uploaded PDF document. DO NOT use any external knowledge. If the answer cannot be found in the PDF, say 'I cannot find that information in the PDF.' Here is the relevant context from the PDF: {context}"},
@@ -104,6 +128,8 @@ def call_openrouter_api(prompt, context, pdf_path=None):
             headers={
                 "Authorization": f"Bearer {OPENROUTER_API_KEY}",
                 "Content-Type": "application/json",
+                "HTTP-Referer": "https://github.com/1165qwc/Chatbot3/edit/main/PDFChat.py",  # Add a referer header
+                "X-Title": "PDF Chatbot"  # Add a title header
             },
             data=json.dumps(payload),
             timeout=60
@@ -119,7 +145,9 @@ def call_openrouter_api(prompt, context, pdf_path=None):
             logger.error(error_msg)
             if response.text:
                 logger.error(f"Response text: {response.text}")
-            st.error(error_msg)
+                st.error(f"OpenRouter API error: {response.text}")
+            else:
+                st.error(error_msg)
             return f"Error: {response.status_code}"
     except requests.exceptions.ConnectTimeout:
         error_msg = "Connection timeout when connecting to OpenRouter API."
@@ -229,8 +257,22 @@ def call_ollama_api(prompt, context, model="deepseek-r1:1.5b", pdf_path=None):
     logger.info(f"Calling Ollama API with model: {model}")
     
     # Prepare message for text-based models with strict instructions to only use PDF content
+    # Adjust prompt based on model size
+    if model == "deepseek-r1:8b":
+        system_prompt = f"""You are a PDF assistant that ONLY answers questions based on the content of the uploaded PDF document. 
+DO NOT use any external knowledge. If the answer cannot be found in the PDF, say 'I cannot find that information in the PDF.'
+You have access to the following context from the PDF: {context}
+
+Your task is to:
+1. Analyze the context carefully
+2. Answer the user's question using ONLY information from the PDF
+3. If the answer is not in the PDF, clearly state that
+4. Provide specific references to the PDF content when possible"""
+    else:
+        system_prompt = f"You are a PDF assistant that ONLY answers questions based on the content of the uploaded PDF document. DO NOT use any external knowledge. If the answer cannot be found in the PDF, say 'I cannot find that information in the PDF.' Here is the relevant context from the PDF: {context}"
+    
     messages = [
-        {"role": "system", "content": f"You are a PDF assistant that ONLY answers questions based on the content of the uploaded PDF document. DO NOT use any external knowledge. If the answer cannot be found in the PDF, say 'I cannot find that information in the PDF.' Here is the relevant context from the PDF: {context}"},
+        {"role": "system", "content": system_prompt},
         {"role": "user", "content": f"Based ONLY on the PDF content provided, answer this question: {prompt}"}
     ]
     
@@ -264,11 +306,24 @@ def call_ollama_api(prompt, context, model="deepseek-r1:1.5b", pdf_path=None):
                 "stream": False
             }
     else:
-        payload = {
-            "model": model,
-            "messages": messages,
-            "stream": False
-        }
+        # Adjust parameters based on model size
+        if model == "deepseek-r1:8b":
+            payload = {
+                "model": model,
+                "messages": messages,
+                "stream": False,
+                "options": {
+                    "temperature": 0.7,
+                    "top_p": 0.9,
+                    "num_predict": 1024
+                }
+            }
+        else:
+            payload = {
+                "model": model,
+                "messages": messages,
+                "stream": False
+            }
     
     try:
         logger.info(f"Sending request to Ollama API at {API_URL}")
