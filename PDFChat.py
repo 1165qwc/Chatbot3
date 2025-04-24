@@ -23,9 +23,11 @@ logger = logging.getLogger('PDFChat')
 # Check if API keys are available
 if not OPENROUTER_API_KEY:
     logger.warning("OpenRouter API key not found in environment variables")
+    OPENROUTER_API_KEY = "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"  # Fallback to hardcoded key
 
 if not FIREWORKS_API_KEY:
     logger.warning("Fireworks API key not found in environment variables")
+    FIREWORKS_API_KEY = "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"  # Fallback to hardcoded key
 
 # ----------- Upload Folder Setup -----------
 upload_folder = 'uploaded_pdf_file'
@@ -225,7 +227,11 @@ def fuzzy_match_query(text, query):
             highest_score = score
             best_paragraph = paragraph
     
-    context = best_paragraph if highest_score > 0 else text
+    # Check if we found any relevant content
+    if highest_score == 0:
+        return "", ["content not found in PDF"]
+    
+    context = best_paragraph
     missing_info = []
     if "when" in query.lower() and not re.search(r'\b(date|day|month|year|time)\b', query, re.IGNORECASE):
         missing_info.append("time period")
@@ -233,6 +239,46 @@ def fuzzy_match_query(text, query):
         missing_info.append("location")
         
     return context, missing_info
+
+# ----------- Content Validation Function -----------
+def validate_response(response, pdf_content):
+    """Check if the response contains information that's likely not from the PDF"""
+    # Common phrases that indicate external knowledge
+    external_indicators = [
+        "generally speaking", "in general", "typically", "usually", 
+        "as a rule", "in most cases", "according to experts", 
+        "research shows", "studies indicate", "it is known that",
+        "it is common knowledge", "it is widely accepted", "it is a fact that"
+    ]
+    
+    # Check for external knowledge indicators
+    for indicator in external_indicators:
+        if indicator.lower() in response.lower():
+            return False, f"The response contains phrases like '{indicator}' which suggest it's using external knowledge rather than PDF content only."
+    
+    # Check if response length is too short to be meaningful
+    if len(response.strip()) < 20:
+        return False, "The response is too short to be meaningful."
+    
+    # Check if response contains "I cannot find" which is our indicator for content not in PDF
+    if "cannot find" in response.lower() or "not found in the pdf" in response.lower():
+        return True, "The response correctly indicates that information is not in the PDF."
+    
+    # Check for key terms from the PDF content
+    pdf_terms = re.findall(r'\b\w{5,}\b', pdf_content.lower())
+    pdf_terms = [term for term in pdf_terms if term not in ["about", "which", "their", "there", "these", "those", "would", "could", "should"]]
+    
+    # Count how many PDF terms appear in the response
+    pdf_term_count = 0
+    for term in pdf_terms[:20]:  # Limit to first 20 terms to avoid excessive checking
+        if term in response.lower():
+            pdf_term_count += 1
+    
+    # If response has very few PDF terms, it might be using external knowledge
+    if pdf_term_count < 2 and len(response.split()) > 20:
+        return False, "The response contains very few terms from the PDF content, suggesting it might be using external knowledge."
+    
+    return True, "The response appears to be based on PDF content."
 
 # ----------- PDF Image Extraction for Multimodal Use -----------
 def get_pdf_image(pdf_path):
@@ -256,10 +302,12 @@ def call_ollama_api(prompt, context, model="deepseek-r1:1.5b", pdf_path=None):
     
     logger.info(f"Calling Ollama API with model: {model}")
     
-    # Prepare message for text-based models with strict instructions to only use PDF content
-    # Adjust prompt based on model size
-    if model == "deepseek-r1:8b":
-        system_prompt = f"""You are a PDF assistant that ONLY answers questions based on the content of the uploaded PDF document. 
+    # Adjust timeout based on model size
+    timeout = 180 if model == "deepseek-r1:8b" else 60
+    logger.info(f"Using timeout of {timeout} seconds for model {model}")
+    
+    # Enhanced system prompt with stricter instructions
+    system_prompt = f"""You are a PDF assistant that ONLY answers questions based on the content of the uploaded PDF document. 
 DO NOT use any external knowledge. If the answer cannot be found in the PDF, say 'I cannot find that information in the PDF.'
 You have access to the following context from the PDF: {context}
 
@@ -267,9 +315,11 @@ Your task is to:
 1. Analyze the context carefully
 2. Answer the user's question using ONLY information from the PDF
 3. If the answer is not in the PDF, clearly state that
-4. Provide specific references to the PDF content when possible"""
-    else:
-        system_prompt = f"You are a PDF assistant that ONLY answers questions based on the content of the uploaded PDF document. DO NOT use any external knowledge. If the answer cannot be found in the PDF, say 'I cannot find that information in the PDF.' Here is the relevant context from the PDF: {context}"
+4. Provide specific references to the PDF content when possible
+5. NEVER make up information or use knowledge outside the PDF
+6. If you're unsure, say "I cannot find that information in the PDF" rather than guessing
+
+Remember: Your only source of information is the PDF content provided above. Do not use any pre-trained knowledge."""
     
     messages = [
         {"role": "system", "content": system_prompt},
@@ -326,8 +376,9 @@ Your task is to:
             }
     
     try:
-        logger.info(f"Sending request to Ollama API at {API_URL}")
-        response = requests.post(API_URL, json=payload, timeout=60)
+        logger.info(f"Sending request to Ollama API at {API_URL} with timeout {timeout}")
+        # Explicitly set both connect and read timeouts
+        response = requests.post(API_URL, json=payload, timeout=(timeout, timeout))
         logger.info(f"Ollama API response status: {response.status_code}")
         
         if response.status_code == 200:
@@ -336,12 +387,21 @@ Your task is to:
             
             # Handle different API response formats
             if "message" in data:
-                return data["message"]["content"]
+                response_text = data["message"]["content"]
             elif "response" in data:
-                return data["response"]
+                response_text = data["response"]
             else:
                 logger.warning("Unexpected response format from Ollama")
                 return "No response from Ollama"
+            
+            # Validate the response to ensure it's based on PDF content
+            is_valid, validation_message = validate_response(response_text, context)
+            if not is_valid:
+                logger.warning(f"Response validation failed: {validation_message}")
+                # Return a corrected response
+                return f"I cannot find that information in the PDF. {validation_message}"
+            
+            return response_text
         else:
             error_msg = f"Ollama API error: {response.status_code}"
             logger.error(error_msg)
@@ -351,6 +411,11 @@ Your task is to:
             return f"Error: {response.status_code}"
     except requests.exceptions.ConnectTimeout:
         error_msg = "Connection timeout when connecting to Ollama server. Make sure it's running."
+        logger.error(error_msg)
+        st.error(error_msg)
+        return error_msg
+    except requests.exceptions.ReadTimeout:
+        error_msg = f"Request timed out after {timeout} seconds. The {model} model may be too large for your system or taking too long to process. Try using a smaller model like deepseek-r1:1.5b."
         logger.error(error_msg)
         st.error(error_msg)
         return error_msg
@@ -414,6 +479,13 @@ def response_generator(text, prompt, pdf_path=None):
     # Find relevant context and check for missing information
     context, missing_info = fuzzy_match_query(text, prompt)
     
+    # Check if the question is not within the PDF content
+    if "content not found in PDF" in missing_info:
+        return {
+            "answer": f"I cannot find any information related to your question in the PDF document. The question appears to be outside the scope of the document's content. Please try asking a different question that relates to the information in the PDF.",
+            "needs_info": True
+        }
+    
     # Ask for more info if needed
     if missing_info and len(missing_info) > 0:
         return {
@@ -427,6 +499,11 @@ def response_generator(text, prompt, pdf_path=None):
             logger.info(f"Using Ollama model: {ollama_model}")
             # Add a note about PDF-only responses
             st.info("Using local Ollama model. Responses will be based ONLY on the PDF content.")
+            
+            # Add a warning for the 8b model
+            if ollama_model == "deepseek-r1:8b":
+                st.warning("Using the larger 8b model. This may take longer to process. If it times out, try switching to the 1.5b model.", icon="⚠️")
+            
             ollama_response = call_ollama_api(prompt, context, ollama_model, pdf_path)
             if ollama_response and not ollama_response.startswith("Error:") and not ollama_response.startswith("Could not connect"):
                 return {"answer": enhance_response(ollama_response)}
