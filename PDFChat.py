@@ -504,7 +504,7 @@ def get_pdf_image(pdf_path):
 # ----------- Ollama API Communication Logic -----------
 def call_ollama_api(prompt, context, model="llama3.1:8b", pdf_path=None):
     """Call the Ollama API with the specified model"""
-    API_URL = f"http://127.0.0.1:11434/api/generate"
+    API_URL = "http://127.0.0.1:11434/api/chat"
     
     logger.info(f"Calling Ollama API with model: {model}")
     
@@ -543,17 +543,18 @@ Remember: The content is your main source, but you can enhance the response with
         "model": model,
         "messages": messages,
         "stream": False,
-        "temperature": 0.5,
-        "max_tokens": 2048,
-        "top_p": 0.8,
-        "frequency_penalty": 0.3,
-        "presence_penalty": 0.3
+        "options": {
+            "temperature": 0.5,
+            "top_p": 0.8,
+            "num_predict": 2048
+        }
     }
     
     try:
-        logger.info(f"Sending request to Ollama API at {API_URL} with timeout 60")
-        # Explicitly set both connect and read timeouts
-        response = requests.post(API_URL, json=payload, timeout=(60, 60))
+        logger.info(f"Sending request to Ollama API at {API_URL}")
+        # Adjust timeout based on model size
+        timeout = 180 if model == "llama3.1:8b" else 60
+        response = requests.post(API_URL, json=payload, timeout=(timeout, timeout))
         logger.info(f"Ollama API response status: {response.status_code}")
         
         if response.status_code == 200:
@@ -583,7 +584,7 @@ Remember: The content is your main source, but you can enhance the response with
         st.error(error_msg)
         return error_msg
     except requests.exceptions.ReadTimeout:
-        error_msg = f"Request timed out after 60 seconds. The {model} model may be too large for your system or taking too long to process. Try using a smaller model like deepseek-r1:1.5b."
+        error_msg = f"Request timed out after {timeout} seconds. The {model} model may be too large for your system or taking too long to process. Try using a smaller model like deepseek-r1:1.5b."
         logger.error(error_msg)
         st.error(error_msg)
         return error_msg
