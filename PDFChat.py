@@ -13,21 +13,9 @@ from dotenv import load_dotenv
 # Load environment variables from .env file
 load_dotenv()
 
-OPENROUTER_API_KEY= "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"
-
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger('PDFChat')
-
-# Check if API keys are available
-if not OPENROUTER_API_KEY:
-    logger.warning("OpenRouter API key not found in environment variables")
-    st.warning("OpenRouter API key not found. Please set the OPENROUTER_API_KEY environment variable.")
-else:
-    logger.info("OpenRouter API key loaded successfully")
-    logger.info(f"API key length: {len(OPENROUTER_API_KEY)} characters")
-    logger.info(f"API key starts with: {OPENROUTER_API_KEY[:10]}...")
-    st.sidebar.success("OpenRouter API key loaded successfully")
 
 # ----------- Upload Folder Setup -----------
 upload_folder = 'uploaded_pdf_file'
@@ -45,7 +33,7 @@ if 'selected_model' not in st.session_state:
 
 selected_model = st.sidebar.selectbox(
     "Choose AI Model",
-    ["Local Ollama", "OpenRouter"],
+    ["Local Ollama"],
     index=0,
     key="model_selector"
 )
@@ -70,7 +58,6 @@ st.sidebar.markdown("""
 - **Local Ollama**: 
   - llama3.1:8b: More powerful but slower
   - deepseek-r1:1.5b: Faster responses
-- **OpenRouter**: Cloud-based model with consistent performance
 
 ### 💡 Tips
 - Upload PDFs for specific document-based answers
@@ -136,141 +123,6 @@ if st.session_state.selected_model == "Local Ollama":
         except requests.exceptions.RequestException as e:
             st.sidebar.error(f"❌ Could not connect to Ollama server: {str(e)}")
             st.sidebar.info("Make sure Ollama is running with 'ollama serve' command")
-
-elif st.session_state.selected_model == "OpenRouter":
-    if not OPENROUTER_API_KEY:
-        st.sidebar.warning("OpenRouter API key not found. Please set the OPENROUTER_API_KEY environment variable.")
-    else:
-        st.sidebar.success("OpenRouter API key loaded successfully")
-
-# ----------- OpenRouter API Integration -----------
-def call_openrouter_api(prompt, context, pdf_path=None):
-    """Call the OpenRouter API for deepseek model"""
-    API_URL = "https://openrouter.ai/api/v1/chat/completions"
-    
-    logger.info("Calling OpenRouter API with deepseek model")
-    
-    # Check if API key is available
-    if not OPENROUTER_API_KEY:
-        error_msg = "OpenRouter API key is missing. Please set the OPENROUTER_API_KEY environment variable."
-        logger.error(error_msg)
-        st.error(error_msg)
-        return error_msg
-    
-    # Prepare messages with balanced instructions
-    messages = [
-        {
-            "role": "system",
-            "content": f"""You are a helpful assistant that primarily uses the provided PDF content to answer questions, while also providing relevant additional information when helpful.
-
-You have access to the following context from the PDF: {context}
-
-Your task is to:
-1. First, analyze the PDF content carefully
-2. Base your answer primarily on the information found in the PDF
-3. If the PDF content is limited, you can supplement with relevant general knowledge
-4. Clearly indicate which information comes from the PDF and which is additional context
-5. Structure your response in a clear and organized manner
-6. Use bullet points or numbered lists for better readability
-7. For car recommendations, always include specific prices
-8. If making car recommendations for students,ensure they are within the student budget of RM 50,000.
-9. Always suggest cars that are in the PDF.
-10. All BYD cars are Electric cars.
-11. All Proton cars are Petrol cars.
-12. Please dont mention that something "not specified in the PDF, but according to general knowledge"
-
-Remember: The PDF content is your main source, but you can enhance the response with relevant additional information when it helps provide a more complete answer."""
-        },
-        {
-            "role": "user",
-            "content": f"Please provide an answer based primarily on the PDF content, supplemented with relevant additional information if needed. For car recommendations, please include specific prices and ensure they are within the student budget of RM 50,000: {prompt}"
-        }
-    ]
-    
-    # Prepare the request payload
-    payload = {
-        "model": "meta-llama/llama-4-maverick:free",
-        "messages": messages,
-        "temperature": 0.5,  # Balanced temperature for focused yet flexible responses
-        "max_tokens": 2048,  # Increased for longer responses
-        "top_p": 0.8,       # Balanced for diverse yet focused outputs
-        "frequency_penalty": 0.3,
-        "presence_penalty": 0.3
-    }
-    
-    try:
-        logger.info(f"Sending request to OpenRouter API")
-        
-        # Create headers with proper authentication
-        headers = {
-            "Authorization": f"Bearer {OPENROUTER_API_KEY.strip()}",
-            "Content-Type": "application/json",
-            "HTTP-Referer": "http://172.16.1.96:8501",
-            "X-Title": "PDF Chatbot"
-        }
-        
-        # Log the request details (excluding sensitive information)
-        logger.info(f"Request URL: {API_URL}")
-        logger.info(f"Request headers: { {k: v if k != 'Authorization' else 'Bearer [REDACTED]' for k, v in headers.items()} }")
-        logger.info(f"Request payload: {payload}")
-        
-        # Make the request using the standard format
-        response = requests.post(
-            url=API_URL,
-            headers=headers,
-            json=payload,
-            timeout=60
-        )
-        
-        # Log the response status
-        logger.info(f"OpenRouter API response status: {response.status_code}")
-        logger.info(f"OpenRouter API response headers: {dict(response.headers)}")
-        
-        if response.status_code == 200:
-            data = response.json()
-            logger.info("Received successful response from OpenRouter")
-            
-            # Extract the response content
-            if "choices" in data and len(data["choices"]) > 0:
-                response_text = data["choices"][0]["message"]["content"]
-                return response_text
-            else:
-                error_msg = "No valid response content found in OpenRouter API response"
-                logger.error(error_msg)
-                st.error(error_msg)
-                return error_msg
-        else:
-            error_msg = f"OpenRouter API error: {response.status_code}"
-            logger.error(error_msg)
-            if response.text:
-                logger.error(f"Response text: {response.text}")
-                try:
-                    error_data = response.json()
-                    if "error" in error_data:
-                        error_msg = f"OpenRouter API error: {error_data['error']}"
-                    elif "message" in error_data:
-                        error_msg = f"OpenRouter API error: {error_data['message']}"
-                    else:
-                        error_msg = f"OpenRouter API error: {response.text}"
-                except:
-                    error_msg = f"OpenRouter API error: {response.text}"
-            st.error(error_msg)
-            return error_msg
-    except requests.exceptions.ConnectTimeout:
-        error_msg = "Connection timeout when connecting to OpenRouter API."
-        logger.error(error_msg)
-        st.error(error_msg)
-        return error_msg
-    except requests.exceptions.ConnectionError:
-        error_msg = "Could not connect to OpenRouter API. Please check your internet connection."
-        logger.error(error_msg)
-        st.error(error_msg)
-        return error_msg
-    except Exception as e:
-        error_msg = f"Error calling OpenRouter: {str(e)}"
-        logger.error(error_msg)
-        st.error(error_msg)
-        return error_msg
 
 # ----------- PDF Upload and Text Extraction -----------
 def clean_text(text):
@@ -523,18 +375,19 @@ Your task is to:
 4. Clearly indicate which information comes from the content and which is additional context
 5. Structure your response in a clear and organized manner
 6. Use bullet points or numbered lists for better readability
-7. For car recommendations, always include specific prices
-8. If making car recommendations for students, ensure they are within the student budget of RM 50,000
-9. Always suggest cars that are in the content
-10. All BYD cars are Electric cars
-11. All Proton cars are Petrol cars
-12. Please don't mention that something "not specified in the content, but according to general knowledge"
+7. For car recommendations, always include specific prices if available.
+8. Only recommend models that are in the content, no need to add on any other models.
+9. For the price in PDF, usually it is in format of RM XXX,XXX.00 , so please get the entire price, not just the last 3 digits.
+10. If the price is not specified in the content, please say "The price is not specified in the content"
+11. If mention about model, please include all model that can be found in the content.
+12. normally the price will be mentioned after "priced at" or "starting from" or "from" or "from RM" or "from RM"
+13. Premium class car will be more than RM 500,000.
 
 Remember: The content is your main source, but you can enhance the response with relevant additional information when it helps provide a more complete answer."""
         },
         {
             "role": "user",
-            "content": f"Please provide an answer based primarily on the content, supplemented with relevant additional information if needed. For car recommendations, please include specific prices and ensure they are within the student budget of RM 50,000: {prompt}"
+            "content": f"Please provide an answer based primarily on the content, supplemented with relevant additional information if needed. {prompt}"
         }
     ]
     
@@ -544,7 +397,7 @@ Remember: The content is your main source, but you can enhance the response with
         "messages": messages,
         "stream": False,
         "options": {
-            "temperature": 0.5,
+            "temperature": 0.9,
             "top_p": 0.8,
             "num_predict": 2048
         }
@@ -642,53 +495,20 @@ def response_generator(text, prompt, pdf_path=None):
                     elif "response" in data:
                         return {"answer": data["response"]}
             except Exception as e:
-                st.warning(f"Error with Ollama: {e}. Falling back to OpenRouter.", icon="⚠️")
+                st.warning(f"Error with Ollama: {e}. Falling back to Ollama.", icon="⚠️")
                 logger.error(f"Exception in Ollama call: {str(e)}")
         
-        # Try OpenRouter for general questions
+        # Try Ollama for general questions
         try:
-            logger.info("Using OpenRouter API for general question")
-            st.info("Using OpenRouter for general question.")
+            logger.info("Using Ollama model for general question")
+            st.info("Using local Ollama model for general question.")
             
-            messages = [
-                {
-                    "role": "system",
-                    "content": "You are a helpful assistant that provides informative and detailed answers to questions. Be natural and conversational in your responses."
-                },
-                {
-                    "role": "user",
-                    "content": prompt
-                }
-            ]
-            
-            payload = {
-                "model": "meta-llama/llama-4-maverick:free",
-                "messages": messages,
-                "temperature": 0.7,
-                "max_tokens": 2048,
-                "top_p": 0.9
-            }
-            
-            headers = {
-                "Authorization": f"Bearer {OPENROUTER_API_KEY.strip()}",
-                "Content-Type": "application/json",
-                "HTTP-Referer": "http://172.16.1.96:8501",
-                "X-Title": "PDF Chatbot"
-            }
-            
-            response = requests.post(
-                "https://openrouter.ai/api/v1/chat/completions",
-                headers=headers,
-                json=payload,
-                timeout=60
-            )
-            
-            if response.status_code == 200:
-                data = response.json()
-                if "choices" in data and len(data["choices"]) > 0:
-                    return {"answer": data["choices"][0]["message"]["content"]}
-            
-            return {"answer": "I apologize, but I couldn't process your request at this time. Please try again later."}
+            ollama_response = call_ollama_api(prompt, "", st.session_state.ollama_model, pdf_path)
+            if ollama_response and not ollama_response.startswith("Error:"):
+                return {"answer": enhance_response(ollama_response)}
+            else:
+                st.warning("No valid response from Ollama", icon="⚠️")
+                logger.warning(f"Invalid Ollama response: {ollama_response}")
         except Exception as e:
             st.error(f"Error processing your request: {str(e)}")
             return {"answer": "I apologize, but I encountered an error while processing your request. Please try again later."}
@@ -721,30 +541,13 @@ def response_generator(text, prompt, pdf_path=None):
             
             ollama_response = call_ollama_api(prompt, context, st.session_state.ollama_model, pdf_path)
             if ollama_response and not ollama_response.startswith("Error:") and not ollama_response.startswith("Could not connect"):
-                return {"answer": enhance_response(ollama_response, source_doc, page_number)}
+                return {"answer": enhance_response(ollama_response)}
             else:
-                st.warning("No valid response from Ollama, falling back to OpenRouter", icon="⚠️")
+                st.warning("No valid response from Ollama", icon="⚠️")
                 logger.warning(f"Invalid Ollama response: {ollama_response}")
         except Exception as e:
-            st.warning(f"Error with Ollama: {e}. Falling back to OpenRouter.", icon="⚠️")
+            st.warning(f"Error with Ollama: {e}. Falling back to Ollama.", icon="⚠️")
             logger.error(f"Exception in Ollama call: {str(e)}")
-    
-    if st.session_state.selected_model == "OpenRouter" or (st.session_state.selected_model == "Local Ollama" and ('ollama_response' not in locals() or 
-                                                                              (ollama_response and (ollama_response.startswith("Error:") or 
-                                                                                                 ollama_response.startswith("Could not connect"))))):
-        try:
-            logger.info("Using OpenRouter API with deepseek model")
-            st.info("Using OpenRouter deepseek model. Responses will be based on the PDF content.")
-            
-            openrouter_response = call_openrouter_api(prompt, context, pdf_path)
-            if openrouter_response and not openrouter_response.startswith("Error:"):
-                return {"answer": enhance_response(openrouter_response, source_doc, page_number)}
-            else:
-                st.warning("No valid response from OpenRouter", icon="⚠️")
-                logger.warning(f"Invalid OpenRouter response: {openrouter_response}")
-        except Exception as e:
-            st.warning(f"Error with OpenRouter: {e}", icon="⚠️")
-            logger.error(f"Exception in OpenRouter call: {str(e)}")
     
     return {"answer": "I apologize, but I couldn't process your request at this time. Please try again later."}
 
@@ -755,26 +558,44 @@ st.title("PDF Chat Assistant")
 if "messages" not in st.session_state:
     st.session_state.messages = []
     with st.chat_message("assistant"):
-        st.markdown("Hey! How can I help you today? 😊")
-    st.session_state.messages.append({"role": "assistant", "content": "Hey! How can I help you today? 😊"})
+        st.markdown("Hello! I'm your PDF Chat Assistant. How can I help you today? 😊")
+    st.session_state.messages.append({"role": "assistant", "content": "Hello! I'm your PDF Chat Assistant. How can I help you today? 😊"})
 
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
+# Handle user input
 if prompt := st.chat_input("Ask me anything..."):
     with st.chat_message("user"):
         st.markdown(prompt)
     st.session_state.messages.append({"role": "user", "content": prompt})
-    
-    # Handle PDF path only if files are uploaded
-    pdf_path = None
-    if uploaded_files and len(uploaded_files) > 0:
-        pdf_path = os.path.join(upload_folder, uploaded_files[0].name)
-    
-    with st.spinner("Processing your question..."):
-        response = response_generator(extracted_text if extracted_text else "", prompt, pdf_path)
-    
+
+    # Basic interaction handling
+    if "hello" in prompt.lower() or "hi" in prompt.lower():
+        response_text = "Hi there! How can I assist you today?"
+    elif "how are you" in prompt.lower():
+        response_text = "I'm just a program, but I'm here to help you! What do you need assistance with?"
+    elif "help" in prompt.lower():
+        response_text = "You can ask me questions about the PDFs you upload or general inquiries. Just type your question!"
+    elif "bye" in prompt.lower() or "goodbye" in prompt.lower():
+        response_text = "Goodbye! Have a great day! 😊"
+    else:
+        # Handle PDF path only if files are uploaded
+        pdf_path = None
+        if uploaded_files and len(uploaded_files) > 0:
+            pdf_path = os.path.join(upload_folder, uploaded_files[0].name)
+        
+        with st.spinner("Processing your question..."):
+            response = response_generator(extracted_text if extracted_text else "", prompt, pdf_path)
+        
+        response_text = response['answer']
+
     with st.chat_message("assistant"):
-        st.markdown(response['answer'])
-    st.session_state.messages.append({"role": "assistant", "content": response['answer']})
+        st.markdown(response_text)
+    st.session_state.messages.append({"role": "assistant", "content": response_text})
+
+# Add an expander to view extracted text
+if extracted_text:
+    with st.expander("View Extracted Text"):
+        st.text_area("Extracted Text", extracted_text, height=300)
