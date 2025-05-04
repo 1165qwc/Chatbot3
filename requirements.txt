@@ -2,7 +2,6 @@ streamlit
 pypdf
 fuzzywuzzy
 python-Levenshtein
-huggingface_hub
 requests
 pdf2image
 Pillow
