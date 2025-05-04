@@ -54,7 +54,9 @@ st.sidebar.markdown("""
 ### ⚙️ Model Options
 - **Local Ollama**: 
   - llama3.1:8b: More powerful but slower
-  - deepseek-r1:1.5b: Faster responses
+  - qwen3:8b: Fast processing. Useful for high-level logical reasoning
+  - gemma3:4b: Competitive performance in mathematics.
+  - phi3:3.8b: Clear and concise explanations.
 
 ### 💡 Tips
 - Upload PDFs for specific document-based answers
@@ -99,9 +101,9 @@ if st.session_state.selected_model == "Local Ollama":
     elif st.session_state.ollama_model == "qwen3:8b":
         st.sidebar.info("Using qwen3:8b - Powerful model with excellent reasoning capabilities")
     elif st.session_state.ollama_model == "gemma3:4b":
-        st.sidebar.info("Using gemma3:1b - Fast and efficient model for quick responses")
+        st.sidebar.info("Using gemma3:4b - Competitive performance in mathematics.")
     elif st.session_state.ollama_model == "phi3:3.8b":
-        st.sidebar.info("Using gemma3:1b - Fast and efficient model for quick responses")
+        st.sidebar.info("Using phi3:3.8b - Clear and concise explanations.")
         
     
     # Add a refresh button to test connection again
