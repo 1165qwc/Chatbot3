@@ -632,10 +632,14 @@ st.title("PDF Chat Assistant")
 # Add initial greeting only if not already added
 if "messages" not in st.session_state:
     st.session_state.messages = []
+
+# Only add greeting if the chat is completely empty
+if len(st.session_state.messages) == 0:
     st.session_state.messages.append({
         "role": "assistant",
         "content": "Hello! I'm your PDF Chat Assistant. How can I help you today? 😊"
     })
+
 
 # Render chat history (ONLY ONCE)
 for message in st.session_state.messages:
