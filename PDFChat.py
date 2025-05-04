@@ -10,9 +10,6 @@ import json
 import logging
 from dotenv import load_dotenv
 
-# Load environment variables from .env file
-load_dotenv()
-
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger('PDFChat')
@@ -87,7 +84,7 @@ if st.session_state.selected_model == "Local Ollama":
     
     ollama_model = st.sidebar.selectbox(
         "Choose Ollama Model",
-        ["llama3.1:8b", "deepseek-r1:1.5b"],
+        ["llama3.1:8b", "deepseek-r1:1.5b","qwen3:8b","gemma3:1b"],
         index=0,
         key="ollama_model_selector"
     )
@@ -97,8 +94,12 @@ if st.session_state.selected_model == "Local Ollama":
     if st.session_state.ollama_model == "llama3.1:8b":
         st.sidebar.info("Using llama3.1:8b - Powerful model with excellent reasoning capabilities")
         st.sidebar.warning("This is a large model and may take longer to process. Please be patient.", icon="⚠️")
-    else:
+    elif st.session_state.ollama_model == "deepseek-r1:1.5b":
         st.sidebar.info("Using deepseek-r1:1.5b - Fast and efficient model for quick responses")
+    elif st.session_state.ollama_model == "qwen3:8b":
+        st.sidebar.info("Using qwen3:8b - Powerful model with excellent reasoning capabilities")
+    elif st.session_state.ollama_model == "gemma3:1b":
+        st.sidebar.info("Using gemma3:1b - Fast and efficient model for quick responses")
     
     # Add a refresh button to test connection again
     if st.sidebar.button("Test Ollama Connection"):
@@ -172,6 +173,46 @@ def extract_text_from_pdf(pdf_path):
                 'has_images': len(page.images) > 0,
                 'text_length': len(cleaned_text)
             }
+
+            # Extract car data using regular expressions
+            car_pattern = re.compile(
+                r"(●\s*.*?\n"  # Car model, handles potential leading bullet
+                r"○\s*Price:\s*(.*?)\n"
+                r"○\s*Basic Description:\s*(.*?)\n"
+                r"○\s*Engine Type and Size:\s*(.*?)\n"
+                r"(?:○\s*Power Output:\s*(.*?)\n)?"  # Optional power output
+                r"(?:○\s*Torque Output:\s*(.*?)\n)?"
+                r"(?:○\s*Transmission Type:\s*(.*?)\n)?"
+                r"Key Features:\s*(.*?)(?=\n●|\Z))",
+                re.DOTALL | re.MULTILINE
+            )
+            car_matches = car_pattern.findall(page_text)
+                
+            cars = []
+            for match in car_matches:
+                if len(match) == 8:
+                    (model, price, description, engine, power, torque, transmission, features) = match
+                elif len(match) == 4:
+                    (model, price, description, engine) = match
+                    power, torque, transmission, features = None, None, None, None
+                elif len(match) == 2:
+                    model = match[1].strip()
+                    price, description, engine, power, torque, transmission, features = None, None, None, None, None, None, None
+                else:
+                    logging.warning(f"Skipping malformed car data match on page {i + 1}: {match}")
+                    continue
+                    
+                cars.append({
+                    'model': model.replace("●","").strip(),
+                    'price': price.strip(),
+                    'description': description.strip(),
+                    'engine': engine.strip(),
+                    'power': power.strip() if power else None,
+                    'torque': torque.strip() if torque else None,
+                    'transmission': transmission.strip() if transmission else None,
+                    'features': features.strip().replace('\n', ', ') if features else None,
+                })
+            metadata['cars'] = cars # Store car data in page metadata
             
             # Add page separator and metadata
             pdf_text += f"\n\n--- Page {i + 1} ---\n\n{cleaned_text}"
@@ -221,6 +262,7 @@ if uploaded_files:
                 # Show first page preview
                 st.write("First Page Preview:")
                 st.write(pdf_text.split("--- Page 1 ---")[1].split("--- Page 2 ---")[0] if "--- Page 2 ---" in pdf_text else pdf_text)
+
         else:
             st.warning(f"Could not extract text from {file_name}")
     
@@ -338,6 +380,41 @@ def validate_response(response, pdf_content):
     
     return True, "The response appears to be based on PDF content."
 
+def generate_chat_history_pdf(chat_history):
+    """
+    Generates a PDF from the chat history.
+
+    Args:
+        chat_history (list): A list of dictionaries, where each dictionary
+            represents a message and has keys "role" and "content".
+
+    Returns:
+        bytes: The PDF content as bytes.
+    """
+    buffer = BytesIO()  # Use BytesIO for in-memory PDF generation
+    p = canvas.Canvas(buffer, pagesize=letter)
+    textobject = p.beginText()
+    textobject.setFont("Helvetica", 12)
+    y = 750  # Starting Y position
+
+    for message in chat_history:
+        role = message["role"].capitalize()
+        content = message["content"]
+        textobject.textLine(f"{role}: {content}")
+        y -= 15  # Adjust spacing
+
+        if y < 50:  # Start a new page if we're near the bottom
+            p.drawText(textobject)
+            p.showPage()
+            textobject = p.beginText()
+            textobject.setFont("Helvetica", 12)
+            y = 750
+
+    p.drawText(textobject)
+    p.save()
+    buffer.seek(0)  # Go back to the beginning of the buffer
+    return buffer.getvalue()
+
 # ----------- PDF Image Extraction for Multimodal Use -----------
 def get_pdf_image(pdf_path):
     try:
@@ -369,19 +446,14 @@ def call_ollama_api(prompt, context, model="llama3.1:8b", pdf_path=None):
 You have access to the following context: {context}
 
 Your task is to:
-1. First, analyze the content carefully
+1. First, analyze the entire content carefully
 2. Base your answer primarily on the information found in the content
 3. If the content is limited, you can supplement with relevant general knowledge
-4. Clearly indicate which information comes from the content and which is additional context
-5. Structure your response in a clear and organized manner
-6. Use bullet points or numbered lists for better readability
-7. For car recommendations, always include specific prices if available.
-8. Only recommend models that are in the content, no need to add on any other models.
-9. For the price in PDF, usually it is in format of RM XXX,XXX.00 , so please get the entire price, not just the last 3 digits.
-10. If the price is not specified in the content, please say "The price is not specified in the content"
-11. If mention about model, please include all model that can be found in the content.
-12. normally the price will be mentioned after "priced at" or "starting from" or "from" or "from RM" or "from RM"
-13. Premium class car will be more than RM 500,000.
+4. Structure your response in a clear and organized manner
+5. Use bullet points or numbered lists for better readability
+6. For car recommendations, always include specific prices if available.
+7. Only recommend models that are in the content, no need to add on any other models.
+8. For the price in PDF, usually it is in format of RM XXX,XXX.00 , so please get the entire price, not just the last 3 digits.
 
 Remember: The content is your main source, but you can enhance the response with relevant additional information when it helps provide a more complete answer."""
         },
@@ -406,7 +478,7 @@ Remember: The content is your main source, but you can enhance the response with
     try:
         logger.info(f"Sending request to Ollama API at {API_URL}")
         # Adjust timeout based on model size
-        timeout = 180 if model == "llama3.1:8b" else 60
+        timeout = 18000 if model == "llama3.1:8b" else 6000
         response = requests.post(API_URL, json=payload, timeout=(timeout, timeout))
         logger.info(f"Ollama API response status: {response.status_code}")
         
@@ -554,53 +626,48 @@ def response_generator(text, prompt, pdf_path=None):
 # ----------- Streamlit Chat UI and Interaction Logic -----------
 st.title("PDF Chat Assistant")
 
-# Add initial greeting only if not already added
+# Add initial greeting if no messages
 if "messages" not in st.session_state:
     st.session_state.messages = []
-    st.session_state.messages.append({
-        "role": "assistant",
-        "content": "Hello! I'm your PDF Chat Assistant. How can I help you today? 😊"
-    })
+    with st.chat_message("assistant"):
+        st.markdown("Hello! I'm your PDF Chat Assistant. How can I help you today? 😊")
+    st.session_state.messages.append({"role": "assistant", "content": "Hello! I'm your PDF Chat Assistant. How can I help you today? 😊"})
 
-#  Render chat history (ONLY ONCE)
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
-#  Handle user input
+# Handle user input
 if prompt := st.chat_input("Ask me anything..."):
-    # Display user message
     with st.chat_message("user"):
         st.markdown(prompt)
-
     st.session_state.messages.append({"role": "user", "content": prompt})
 
-    # Response logic
-    lower_prompt = prompt.lower()
-    if "hello" in lower_prompt or "hi" in lower_prompt:
+    # Basic interaction handling
+    if "hello" in prompt.lower():
         response_text = "Hi there! How can I assist you today?"
-    elif "how are you" in lower_prompt:
-        response_text = "I'm just a program, but I'm here to help you!"
-    elif "help" in lower_prompt:
-        response_text = "You can ask me anything about the PDFs you upload."
-    elif "bye" in lower_prompt:
+    elif "how are you" in prompt.lower():
+        response_text = "I'm just a program, but I'm here to help you! What do you need assistance with?"
+    elif "help" in prompt.lower():
+        response_text = "You can ask me questions about the PDFs you upload or general inquiries. Just type your question!"
+    elif "bye" in prompt.lower() or "goodbye" in prompt.lower():
         response_text = "Goodbye! Have a great day! 😊"
     else:
+        # Handle PDF path only if files are uploaded
         pdf_path = None
         if uploaded_files and len(uploaded_files) > 0:
             pdf_path = os.path.join(upload_folder, uploaded_files[0].name)
-
+        
         with st.spinner("Processing your question..."):
             response = response_generator(extracted_text if extracted_text else "", prompt, pdf_path)
-
+        
         response_text = response['answer']
 
-    # Display assistant response
     with st.chat_message("assistant"):
         st.markdown(response_text)
     st.session_state.messages.append({"role": "assistant", "content": response_text})
 
-#view extracted text
+# Add an expander to view extracted text
 if extracted_text:
     with st.expander("View Extracted Text"):
         st.text_area("Extracted Text", extracted_text, height=300)
