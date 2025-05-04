@@ -84,7 +84,7 @@ if st.session_state.selected_model == "Local Ollama":
     
     ollama_model = st.sidebar.selectbox(
         "Choose Ollama Model",
-        ["llama3.1:8b", "deepseek-r1:1.5b","qwen3:8b","gemma3:1b"],
+        ["llama3.1:8b", "deepseek-r1:1.5b","qwen3:8b","gemma3:4b","phi3:3.8b"],
         index=0,
         key="ollama_model_selector"
     )
@@ -98,8 +98,11 @@ if st.session_state.selected_model == "Local Ollama":
         st.sidebar.info("Using deepseek-r1:1.5b - Fast and efficient model for quick responses")
     elif st.session_state.ollama_model == "qwen3:8b":
         st.sidebar.info("Using qwen3:8b - Powerful model with excellent reasoning capabilities")
-    elif st.session_state.ollama_model == "gemma3:1b":
+    elif st.session_state.ollama_model == "gemma3:4b":
         st.sidebar.info("Using gemma3:1b - Fast and efficient model for quick responses")
+    elif st.session_state.ollama_model == "phi3:3.8b":
+        st.sidebar.info("Using gemma3:1b - Fast and efficient model for quick responses")
+        
     
     # Add a refresh button to test connection again
     if st.sidebar.button("Test Ollama Connection"):
