@@ -333,7 +333,7 @@ def fuzzy_match_query(text, query):
                     page_number = page_idx
     
     # Check if we found any relevant content
-    if highest_score == 300:
+    if highest_score < 300:
         return "", ["content not found in PDF"], None, None
     
     context = best_paragraph
