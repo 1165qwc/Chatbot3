@@ -461,8 +461,8 @@ Your task is to:
 8. For the price in PDF, usually it is in format of RM XXX,XXX.00 , so please get the entire price, not just the last 3 digits.
 9. Cannot answer any question that are not related to cars.
 10.  Answer questions *only* about cars, car models, car features, and car specifications found in the content.
-11.  Do not answer questions that are not related to cars.
-12.  If the answer is not in the content, respond with "I cannot answer questions not related to cars."
+11. If a question is about cars but the information is not in the PDF, respond with: "This information is not available in the provided content."
+12. If a question is not about cars, respond with: "I can only answer questions related to cars and car specifications."
 
 Remember: The content is your main source."""
         },
