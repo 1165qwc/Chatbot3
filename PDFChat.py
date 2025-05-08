@@ -243,17 +243,9 @@ if uploaded_files:
 
         with open(saved_path, 'wb') as f:
             f.write(uploaded_file.getbuffer())
-            
-     st.markdown("""
-     <style>
-     .st-success {
-         background-color: red !important;
-         color: white !important;  /* Optionally change text color as well */
-     }
-     </style>
-     """, unsafe_allow_html=True)
+        
 
-        st.success(f"PDF file '{file_name}' has successfully uploaded to {saved_path}")
+        st.error(f"PDF file '{file_name}' has successfully uploaded to {saved_path}")
 
         # Extract text and metadata
         pdf_text, metadata = extract_text_from_pdf(saved_path)
@@ -290,7 +282,7 @@ if uploaded_files:
         # Store metadata in session state for later use
         st.session_state.pdf_metadata = all_metadata
     else:
-        st.error("No text could be extracted from any of the uploaded PDFs.")
+        st.success("No text could be extracted from any of the uploaded PDFs.")
 
 # ----------- Response Enhancement Function -----------
 def enhance_response(answer, source_doc=None, page_number=None):
@@ -472,6 +464,7 @@ Your task is to:
 10. If a question is about cars but the information is not in the PDF, respond with: "This information is not available in the provided content."
 11. If a question is not about cars, respond with: "I can only answer questions related to cars and car specifications."
 12. If asked about a car's price or key features, only use the information exactly as stated in the provided content.
+13. Please give me emoji after every response.
 
 Remember: The content is your main source."""
         },
