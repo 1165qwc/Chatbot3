@@ -243,6 +243,15 @@ if uploaded_files:
 
         with open(saved_path, 'wb') as f:
             f.write(uploaded_file.getbuffer())
+            
+     st.markdown("""
+     <style>
+     .st-success {
+         background-color: red !important;
+         color: white !important;  /* Optionally change text color as well */
+     }
+     </style>
+     """, unsafe_allow_html=True)
 
         st.success(f"PDF file '{file_name}' has successfully uploaded to {saved_path}")
 
